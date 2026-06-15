@@ -5,79 +5,12 @@ class GuardianMonitor {
         this.reconnectAttempts = 0;
         this.maxReconnectDelay = 30000;
         this.wsUrl = `ws://${window.location.hostname}:8000/ws/events`;
-        this.webcamStream = null;
 
         this.init();
     }
 
     init() {
         this.connectWebSocket();
-        this.setupWebcamButton();
-    }
-
-    setupWebcamButton() {
-        const btn = document.getElementById('btn-start-cam');
-        if (btn) {
-            btn.addEventListener('click', () => this.startWebcam());
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Webcam via getUserMedia
-    // ------------------------------------------------------------------
-
-    async startWebcam() {
-        const video = document.getElementById('live-video');
-        const btn = document.getElementById('btn-start-cam');
-        if (!video) return;
-
-        btn.disabled = true;
-        btn.textContent = '⏳ Solicitando...';
-        this.setCamStatus('📷 Solicitando permiso de cámara...', 'text-yellow-400');
-
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            this.setCamStatus('❌ Este navegador no soporta la API de cámara', 'text-red-400');
-            btn.disabled = false;
-            btn.textContent = '📷 Iniciar Webcam';
-            return;
-        }
-
-        try {
-            // Timeout de 10s para que no se cuelgue
-            const stream = await Promise.race([
-                navigator.mediaDevices.getUserMedia({
-                    video: { width: { ideal: 640 }, height: { ideal: 480 } },
-                    audio: false,
-                }),
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Tiempo de espera agotado (10s)')), 10000)
-                ),
-            ]);
-
-            this.webcamStream = stream;
-            video.srcObject = stream;
-            await video.play();
-
-            this.setCamStatus('✅ Webcam conectada', 'text-green-400');
-            btn.textContent = '📷 Webcam Activa';
-            btn.disabled = true;
-            console.log('[cam] Webcam OK');
-
-        } catch (err) {
-            console.warn('[cam] Error:', err.message);
-            this.setCamStatus(`❌ ${err.message}`, 'text-red-400');
-            btn.disabled = false;
-            btn.textContent = '📷 Reintentar Webcam';
-        }
-    }
-
-    setCamStatus(msg, colorClass = 'text-gray-500') {
-        const el = document.getElementById('cam-status');
-        if (el) {
-            el.textContent = msg;
-            el.className = `text-xs ${colorClass}`;
-        }
-        console.log('[cam]', msg);
     }
 
     // ------------------------------------------------------------------

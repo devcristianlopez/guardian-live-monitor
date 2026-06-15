@@ -7,7 +7,10 @@ differencing, and sends events to the backend API.
 
 import asyncio
 import os
+import socketserver
+import threading
 import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import cv2
 import httpx
@@ -17,11 +20,63 @@ import numpy as np  # noqa: F401  # required by OpenCV internals
 # Configuration from environment variables
 # ---------------------------------------------------------------------------
 CAMERA_ID = os.getenv("CAMERA_ID", "CAM-01")
-SOURCE = os.getenv("SOURCE", "video")              # "webcam" o "video"
+SOURCE = os.getenv("SOURCE", "webcam")             # "webcam" o "video"
 VIDEO_PATH = os.getenv("VIDEO_PATH", "/app/test_video.mp4")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 MOTION_THRESHOLD = int(os.getenv("MOTION_THRESHOLD", "5000"))
 COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "3"))
+
+# ---------------------------------------------------------------------------
+# MJPEG live video stream (background thread)
+# ---------------------------------------------------------------------------
+
+STREAM_PORT = int(os.getenv("STREAM_PORT", "8080"))
+
+_latest_jpeg: bytes = b""
+_jpeg_lock = threading.Lock()
+
+
+class _MJpegHandler(BaseHTTPRequestHandler):
+    """Serve latest frame as multipart/x-mixed-replace stream."""
+
+    def do_GET(self) -> None:
+        if self.path != "/stream":
+            self.send_response(404)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+        self.send_header("Cache-Control", "no-cache, no-store")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        while True:
+            with _jpeg_lock:
+                jpeg = _latest_jpeg
+            if jpeg:
+                try:
+                    self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n")
+                    self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode())
+                    self.wfile.write(jpeg)
+                    self.wfile.write(b"\r\n")
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    break
+            time.sleep(0.05)
+
+    def log_message(self, fmt: str, *args) -> None:
+        pass
+
+
+class _ThreadedHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+def _start_mjpeg_server() -> None:
+    server = _ThreadedHTTPServer(("0.0.0.0", STREAM_PORT), _MJpegHandler)
+    print(f"[stream] MJPEG on http://0.0.0.0:{STREAM_PORT}/stream")
+    server.serve_forever()
+
 
 # ---------------------------------------------------------------------------
 # Synthetic test video generator
@@ -121,6 +176,9 @@ def main() -> None:
 
     last_event_time: float = 0.0
 
+    # Start MJPEG stream thread
+    threading.Thread(target=_start_mjpeg_server, daemon=True).start()
+
     print("Starting motion detection loop (Ctrl+C to stop)...")
     try:
         while True:
@@ -132,6 +190,11 @@ def main() -> None:
                     continue
                 print("Webcam stream ended")
                 break
+
+            # Update MJPEG stream with current frame
+            _, jpeg_buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            with _jpeg_lock:
+                _latest_jpeg = jpeg_buf.tobytes()
 
             # 1. Convert to grayscale and apply blur
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
