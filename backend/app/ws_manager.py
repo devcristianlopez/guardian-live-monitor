@@ -2,7 +2,7 @@ import logging
 from typing import List
 
 from fastapi import WebSocket
-from fastapi.exceptions import WebSocketDisconnect
+from starlette.websockets import WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
 
