@@ -116,7 +116,7 @@ class GuardianMonitor {
 
         // Try direct detector port first, then nginx proxy
         const urls = [
-            `http://${window.location.hostname}:8080/stream`,
+            `http://${window.location.hostname}:8081/stream`,
             '/stream',
         ];
 
