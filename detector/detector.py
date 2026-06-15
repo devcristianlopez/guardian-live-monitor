@@ -141,6 +141,7 @@ async def send_event(camera_id: str, severity: str, confidence: float) -> None:
 
 def main() -> None:
     """Open video source and run the motion detection loop."""
+    global _latest_jpeg  # so the MJPEG thread sees updates
     # --- Open capture ---
     if SOURCE == "webcam":
         print(f"Opening webcam (device 0) for camera {CAMERA_ID}")
