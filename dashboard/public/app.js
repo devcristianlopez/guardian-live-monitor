@@ -71,6 +71,15 @@ class GuardianMonitor {
     handleEvent(data) {
         this.totalAlerts++;
         document.getElementById('total-alerts').textContent = this.totalAlerts;
+
+        // Update camera label on first event
+        const camLabel = document.getElementById('cam-label');
+        if (camLabel && data.camera_id) {
+            camLabel.textContent = data.camera_id;
+        }
+
+        // Flash video overlay on alert
+        this.flashOverlay(data.severity);
         
         const severityEl = document.getElementById('last-severity');
         const severityColors = {
@@ -132,6 +141,14 @@ class GuardianMonitor {
         }
     }
     
+    flashOverlay(severity) {
+        const overlay = document.getElementById('alert-overlay');
+        if (!overlay) return;
+        const cls = severity === 'high' ? 'flash' : `flash-${severity}`;
+        overlay.className = cls;
+        setTimeout(() => { overlay.className = ''; }, 400);
+    }
+
     updateConnectionStatus(status) {
         const indicator = document.getElementById('status-indicator');
         const statusText = document.getElementById('connection-status');

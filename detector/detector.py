@@ -6,8 +6,11 @@ differencing, and sends events to the backend API.
 """
 
 import asyncio
+import io
 import os
+import threading
 import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import cv2
 import httpx
@@ -22,6 +25,54 @@ VIDEO_PATH = os.getenv("VIDEO_PATH", "/app/test_video.mp4")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 MOTION_THRESHOLD = int(os.getenv("MOTION_THRESHOLD", "5000"))
 COOLDOWN_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "3"))
+
+# ---------------------------------------------------------------------------
+# MJPEG stream server (background thread)
+# ---------------------------------------------------------------------------
+
+STREAM_PORT = int(os.getenv("STREAM_PORT", "8080"))
+
+_latest_jpeg: bytes | None = None
+_jpeg_lock = threading.Lock()
+
+
+class _MJPEGHandler(BaseHTTPRequestHandler):
+    """Serve latest frame as MJPEG stream on GET /stream."""
+
+    def do_GET(self) -> None:
+        if self.path == "/stream":
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Connection", "close")
+            self.send_header("Pragma", "no-cache")
+            self.end_headers()
+            while True:
+                with _jpeg_lock:
+                    jpeg = _latest_jpeg
+                if jpeg:
+                    try:
+                        self.wfile.write(b"--frame\r\n")
+                        self.wfile.write(b"Content-Type: image/jpeg\r\n")
+                        self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode())
+                        self.wfile.write(jpeg)
+                        self.wfile.write(b"\r\n")
+                    except (BrokenPipeError, ConnectionResetError):
+                        break
+                time.sleep(0.05)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, fmt: str, *args) -> None:
+        pass  # suppress HTTP log spam
+
+
+def _start_mjpeg_server() -> None:
+    server = HTTPServer(("0.0.0.0", STREAM_PORT), _MJPEGHandler)
+    print(f"[stream] MJPEG server listening on http://0.0.0.0:{STREAM_PORT}/stream")
+    server.serve_forever()
+
 
 # ---------------------------------------------------------------------------
 # Synthetic test video generator
@@ -121,6 +172,9 @@ def main() -> None:
 
     last_event_time: float = 0.0
 
+    # --- Start MJPEG stream server (background thread) ---
+    stream_thread = threading.Thread(target=_start_mjpeg_server, daemon=True)
+    stream_thread.start()
     print("Starting motion detection loop (Ctrl+C to stop)...")
     try:
         while True:
@@ -132,6 +186,11 @@ def main() -> None:
                     continue
                 print("Webcam stream ended")
                 break
+
+            # --- Store latest frame as JPEG for MJPEG stream ---
+            _, jpeg_buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 65])
+            with _jpeg_lock:
+                _latest_jpeg = jpeg_buf.tobytes()
 
             # 1. Convert to grayscale and apply blur
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
