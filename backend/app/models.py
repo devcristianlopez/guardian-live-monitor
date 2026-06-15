@@ -1,3 +1,6 @@
+from datetime import datetime
+from uuid import UUID
+
 from pydantic import BaseModel, field_validator
 
 
@@ -21,3 +24,13 @@ class EventPayload(BaseModel):
         if value.lower() not in allowed:
             raise ValueError(f"severity must be one of {allowed}")
         return value.lower()
+
+
+class EventResponse(BaseModel):
+    """Pydantic model for API responses — not the ORM model."""
+    id: UUID
+    camera_id: str
+    event_type: str
+    severity: str
+    confidence: float
+    timestamp: datetime

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import EventPayload
+from app.models import EventPayload, EventResponse
 from app.redis_client import get_redis, publish_event
 from app.schemas import Event
 
@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/events", status_code=status.HTTP_201_CREATED)
+@router.post("/events", status_code=status.HTTP_201_CREATED, response_model=EventResponse)
 async def create_event(
     payload: EventPayload,
     db: AsyncSession = Depends(get_db),
-) -> Event:
+) -> EventResponse:
     """Receive and store a detection event, then broadcast it via Redis."""
     try:
         event = Event(
@@ -31,19 +31,18 @@ async def create_event(
         await db.commit()
         await db.refresh(event)
 
-        # Build a serialisable dict
-        event_dict = {
-            "id": str(event.id),
-            "camera_id": event.camera_id,
-            "event_type": event.event_type,
-            "severity": event.severity,
-            "confidence": event.confidence,
-            "timestamp": (
-                event.timestamp.isoformat()
-                if isinstance(event.timestamp, datetime)
-                else str(event.timestamp)
-            ),
-        }
+        # Build response dict and publish to Redis
+        event_response = EventResponse(
+            id=event.id,
+            camera_id=event.camera_id,
+            event_type=event.event_type,
+            severity=event.severity,
+            confidence=event.confidence,
+            timestamp=event.timestamp,
+        )
+
+        # Serialize to dict for Redis (timestamp as ISO string)
+        event_dict = event_response.model_dump(mode="json")
 
         redis_conn = await get_redis()
         try:
@@ -51,7 +50,7 @@ async def create_event(
         finally:
             await redis_conn.aclose()
 
-        return event
+        return event_response
 
     except Exception as exc:
         logger.error("Failed to create event: %s", exc, exc_info=True)
