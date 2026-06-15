@@ -12,146 +12,70 @@ class GuardianMonitor {
 
     init() {
         this.connectWebSocket();
-        this.setupButtons();
+        this.setupWebcamButton();
     }
 
-    setupButtons() {
-        // Webcam button
-        const camBtn = document.getElementById('btn-start-cam');
-        if (camBtn) {
-            camBtn.addEventListener('click', () => this.startWebcam());
-        }
-
-        // MJPEG stream button
-        const mjpegBtn = document.getElementById('btn-start-mjpeg');
-        if (mjpegBtn) {
-            mjpegBtn.addEventListener('click', () => this.startMjpeg());
+    setupWebcamButton() {
+        const btn = document.getElementById('btn-start-cam');
+        if (btn) {
+            btn.addEventListener('click', () => this.startWebcam());
         }
     }
 
     // ------------------------------------------------------------------
-    // Option 1: Browser Webcam (getUserMedia)
+    // Webcam via getUserMedia
     // ------------------------------------------------------------------
 
     async startWebcam() {
         const video = document.getElementById('live-video');
-        const camBtn = document.getElementById('btn-start-cam');
-        const mjpegFallback = document.getElementById('mjpeg-fallback');
+        const btn = document.getElementById('btn-start-cam');
         if (!video) return;
 
-        // Hide MJPEG fallback if visible
-        if (mjpegFallback) mjpegFallback.style.display = 'none';
-        video.style.display = 'block';
-
-        this.setCamStatus('📷 Solicitando permiso...', 'text-yellow-400');
-        if (camBtn) camBtn.disabled = true;
+        btn.disabled = true;
+        btn.textContent = '⏳ Solicitando...';
+        this.setCamStatus('📷 Solicitando permiso de cámara...', 'text-yellow-400');
 
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            this.setCamStatus('❌ API de cámara no disponible en este navegador', 'text-red-400');
-            if (camBtn) camBtn.disabled = false;
+            this.setCamStatus('❌ Este navegador no soporta la API de cámara', 'text-red-400');
+            btn.disabled = false;
+            btn.textContent = '📷 Iniciar Webcam';
             return;
         }
 
         try {
-            // Timeout Promise race so we don't hang forever
+            // Timeout de 10s para que no se cuelgue
             const stream = await Promise.race([
                 navigator.mediaDevices.getUserMedia({
                     video: { width: { ideal: 640 }, height: { ideal: 480 } },
                     audio: false,
                 }),
                 new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Timeout: la cámara no respondió')), 10000)
+                    setTimeout(() => reject(new Error('Tiempo de espera agotado (10s)')), 10000)
                 ),
             ]);
 
             this.webcamStream = stream;
             video.srcObject = stream;
+            await video.play();
 
-            try {
-                await video.play();
-                this.setCamStatus('✅ Webcam conectada', 'text-green-400');
-                console.log('[cam] getUserMedia OK');
-            } catch (playErr) {
-                // Autoplay blocked — user gesture already happened via button click,
-                // so this shouldn't happen, but handle it just in case
-                this.setCamStatus('⚠️ Error al reproducir video: ' + playErr.message, 'text-red-400');
-            }
+            this.setCamStatus('✅ Webcam conectada', 'text-green-400');
+            btn.textContent = '📷 Webcam Activa';
+            btn.disabled = true;
+            console.log('[cam] Webcam OK');
+
         } catch (err) {
             console.warn('[cam] Error:', err.message);
-            this.setCamStatus('❌ ' + err.message, 'text-red-400');
-            if (camBtn) camBtn.disabled = false;
+            this.setCamStatus(`❌ ${err.message}`, 'text-red-400');
+            btn.disabled = false;
+            btn.textContent = '📷 Reintentar Webcam';
         }
     }
-
-    // ------------------------------------------------------------------
-    // Option 2: MJPEG stream (from detector)
-    // ------------------------------------------------------------------
-
-    startMjpeg() {
-        const video = document.getElementById('live-video');
-        const wrapper = document.getElementById('video-wrapper');
-        const mjpegBtn = document.getElementById('btn-start-mjpeg');
-        if (!wrapper) return;
-
-        // Hide video element
-        if (video) video.style.display = 'none';
-
-        // Remove old fallback if exists
-        let img = document.getElementById('mjpeg-fallback');
-        if (img) {
-            img.style.display = 'block';
-            return;
-        }
-
-        img = document.createElement('img');
-        img.id = 'mjpeg-fallback';
-        img.alt = 'MJPEG Stream';
-        img.style.width = '100%';
-        img.style.height = 'auto';
-        img.style.display = 'block';
-
-        const urls = [
-            `http://${window.location.hostname}:8081/stream`,
-            '/stream',
-        ];
-        let urlIdx = 0;
-
-        const load = () => {
-            if (urlIdx >= urls.length) {
-                this.setCamStatus('❌ No se pudo conectar al stream MJPEG', 'text-red-400');
-                if (mjpegBtn) mjpegBtn.disabled = false;
-                return;
-            }
-            this.setCamStatus(`🔄 Conectando a stream MJPEG (${urls[urlIdx]})...`, 'text-yellow-400');
-            img.src = urls[urlIdx] + '?_=' + Date.now();
-        };
-
-        img.onload = () => {
-            this.setCamStatus('📺 Stream MJPEG conectado', 'text-green-400');
-            console.log('[cam] MJPEG loaded from', urls[urlIdx]);
-            if (mjpegBtn) mjpegBtn.disabled = false;
-        };
-
-        img.onerror = () => {
-            console.warn('[cam] MJPEG failed from', urls[urlIdx]);
-            urlIdx++;
-            setTimeout(load, 800);
-        };
-
-        const overlay = document.getElementById('alert-overlay');
-        wrapper.insertBefore(img, overlay);
-        load();
-    }
-
-    // ------------------------------------------------------------------
-    // UI helpers
-    // ------------------------------------------------------------------
 
     setCamStatus(msg, colorClass = 'text-gray-500') {
         const el = document.getElementById('cam-status');
         if (el) {
             el.textContent = msg;
-            el.className = `px-4 py-2 text-xs border-t border-gray-700 ${colorClass}`;
+            el.className = `text-xs ${colorClass}`;
         }
         console.log('[cam]', msg);
     }
@@ -199,10 +123,7 @@ class GuardianMonitor {
     }
 
     scheduleReconnect() {
-        const delay = Math.min(
-            1000 * Math.pow(2, this.reconnectAttempts),
-            30000
-        );
+        const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
         this.reconnectAttempts++;
         setTimeout(() => this.connectWebSocket(), delay);
     }
@@ -221,9 +142,7 @@ class GuardianMonitor {
         this.flashOverlay(data.severity);
 
         const sev = document.getElementById('last-severity');
-        const colors = {
-            low: 'text-green-400', medium: 'text-yellow-400', high: 'text-red-400',
-        };
+        const colors = { low: 'text-green-400', medium: 'text-yellow-400', high: 'text-red-400' };
         sev.textContent = data.severity.toUpperCase();
         sev.className = `text-3xl font-bold ${colors[data.severity] || 'text-gray-400'}`;
 
@@ -239,7 +158,11 @@ class GuardianMonitor {
         const card = document.createElement('div');
         card.className = `event-card bg-gray-900 rounded-lg p-4 border border-gray-700 severity-${data.severity}`;
 
-        const badge = { low: 'bg-green-900 text-green-300', medium: 'bg-yellow-900 text-yellow-300', high: 'bg-red-900 text-red-300' };
+        const badge = {
+            low: 'bg-green-900 text-green-300',
+            medium: 'bg-yellow-900 text-yellow-300',
+            high: 'bg-red-900 text-red-300',
+        };
         const pct = Math.round((data.confidence || 0) * 100);
 
         card.innerHTML = `

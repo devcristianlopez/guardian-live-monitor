@@ -53,8 +53,6 @@ services:
       - backend
     devices:
       - /dev/video0:/dev/video0
-    ports:
-      - "8081:8080"
     env_file:
       - .env
     restart: unless-stopped
