@@ -6,6 +6,7 @@ class GuardianMonitor {
         this.maxReconnectDelay = 30000;
         this.wsUrl = `ws://${window.location.hostname}:8000/ws/events`;
         this.webcamStream = null;
+        this.camStarted = false;
 
         this.init();
     }
@@ -14,70 +15,137 @@ class GuardianMonitor {
     // Init
     // ------------------------------------------------------------------
 
-    init() {
+    async init() {
         this.connectWebSocket();
-        this.startWebcam();
+        this.setupButtons();
+        await this.tryWebcam();
+    }
+
+    setupButtons() {
+        const btn = document.getElementById('btn-start-cam');
+        if (btn) {
+            btn.addEventListener('click', () => {
+                btn.classList.add('hidden');
+                this.setCamStatus('🔄 Solicitando cámara...', 'text-yellow-400');
+                this.tryWebcam();
+            });
+        }
     }
 
     // ------------------------------------------------------------------
-    // Webcam via getUserMedia (fallback to MJPEG stream)
+    // Webcam via getUserMedia (primary)
     // ------------------------------------------------------------------
 
-    async startWebcam() {
+    async tryWebcam() {
         const video = document.getElementById('live-video');
-        const status = document.getElementById('cam-status');
         if (!video) return;
+
+        // Check if getUserMedia is available
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            this.setCamStatus('❌ getUserMedia no disponible en este navegador', 'text-red-400');
+            this.showStartButton();
+            this.fallbackToMjpeg(video);
+            return;
+        }
+
+        this.setCamStatus('📷 Solicitando permiso de cámara...', 'text-yellow-400');
 
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     width: { ideal: 640 },
                     height: { ideal: 480 },
-                    frameRate: { ideal: 20 },
                 },
                 audio: false,
             });
+
             this.webcamStream = stream;
             video.srcObject = stream;
-            await video.play();
-            if (status) status.textContent = '✅ Webcam conectada';
-            console.log('Webcam started via getUserMedia');
+
+            try {
+                await video.play();
+                this.camStarted = true;
+                this.setCamStatus('✅ Webcam conectada', 'text-green-400');
+                console.log('[cam] getUserMedia OK');
+            } catch (playErr) {
+                console.warn('[cam] play() blocked, need user gesture:', playErr.message);
+                this.setCamStatus('⚠️ Haz clic en "Iniciar Cámara" para activar el video', 'text-yellow-400');
+                this.showStartButton();
+                // Keep the stream but show the button
+                this.camStarted = true;
+            }
         } catch (err) {
-            console.warn('getUserMedia failed, falling back to MJPEG stream:', err.message);
-            if (status) status.textContent = '⚠️ Webcam no disponible, usando stream MJPEG';
+            console.warn('[cam] getUserMedia failed:', err.message);
+            this.setCamStatus(`⚠️ Webcam: ${err.message}`, 'text-red-400');
+            this.showStartButton();
             this.fallbackToMjpeg(video);
         }
     }
 
+    showStartButton() {
+        const btn = document.getElementById('btn-start-cam');
+        if (btn) btn.classList.remove('hidden');
+    }
+
+    setCamStatus(msg, colorClass = 'text-gray-500') {
+        const el = document.getElementById('cam-status');
+        if (el) {
+            el.textContent = msg;
+            el.className = `px-4 py-2 text-xs border-t border-gray-700 ${colorClass}`;
+        }
+        console.log('[cam]', msg);
+    }
+
+    // ------------------------------------------------------------------
+    // MJPEG fallback (direct to detector port)
+    // ------------------------------------------------------------------
+
     fallbackToMjpeg(video) {
-        // Remove video srcObject and use img proxy instead
+        // Hide the video element
         video.style.display = 'none';
 
-        // Create a fallback img element for MJPEG
         const wrapper = document.getElementById('video-wrapper');
         if (!wrapper) return;
+
+        // Check if we already added a fallback img
+        if (document.getElementById('mjpeg-fallback')) return;
 
         const img = document.createElement('img');
         img.id = 'mjpeg-fallback';
         img.alt = 'MJPEG Stream';
-        img.style.width = '100%';
-        img.style.height = 'auto';
-        img.style.display = 'block';
 
-        const reloadStream = () => {
-            img.src = '/stream?' + Date.now();
+        // Try direct detector port first, then nginx proxy
+        const urls = [
+            `http://${window.location.hostname}:8080/stream`,
+            '/stream',
+        ];
+
+        let urlIdx = 0;
+
+        const loadStream = () => {
+            if (urlIdx >= urls.length) {
+                this.setCamStatus('❌ No se pudo conectar al stream de video', 'text-red-400');
+                return;
+            }
+            img.src = urls[urlIdx] + '?_=' + Date.now();
         };
 
+        img.addEventListener('load', () => {
+            this.setCamStatus('📺 Stream MJPEG conectado', 'text-green-400');
+            console.log('[cam] MJPEG stream loaded from', urls[urlIdx]);
+        });
+
         img.addEventListener('error', () => {
-            console.log('MJPEG stream error, retrying...');
-            setTimeout(reloadStream, 2000);
+            console.warn('[cam] MJPEG failed from', urls[urlIdx]);
+            urlIdx++;
+            setTimeout(loadStream, 500);
         });
 
         // Insert before the overlay
         const overlay = document.getElementById('alert-overlay');
         wrapper.insertBefore(img, overlay);
 
-        reloadStream();
+        loadStream();
     }
 
     // ------------------------------------------------------------------
@@ -85,9 +153,7 @@ class GuardianMonitor {
     // ------------------------------------------------------------------
 
     connectWebSocket() {
-        if (this.ws) {
-            this.ws.close();
-        }
+        if (this.ws) this.ws.close();
 
         this.updateConnectionStatus('connecting');
 
@@ -107,8 +173,7 @@ class GuardianMonitor {
 
         this.ws.onmessage = (event) => {
             try {
-                const data = JSON.parse(event.data);
-                this.handleEvent(data);
+                this.handleEvent(JSON.parse(event.data));
             } catch (e) {
                 console.error('Error parsing event:', e);
             }
@@ -133,10 +198,7 @@ class GuardianMonitor {
         );
         console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1})`);
         this.reconnectAttempts++;
-
-        setTimeout(() => {
-            this.connectWebSocket();
-        }, delay);
+        setTimeout(() => this.connectWebSocket(), delay);
     }
 
     // ------------------------------------------------------------------
@@ -148,17 +210,13 @@ class GuardianMonitor {
         document.getElementById('total-alerts').textContent = this.totalAlerts;
 
         const camLabel = document.getElementById('cam-label');
-        if (camLabel && data.camera_id) {
-            camLabel.textContent = data.camera_id;
-        }
+        if (camLabel && data.camera_id) camLabel.textContent = data.camera_id;
 
         this.flashOverlay(data.severity);
 
         const severityEl = document.getElementById('last-severity');
         const severityColors = {
-            low: 'text-green-400',
-            medium: 'text-yellow-400',
-            high: 'text-red-400'
+            low: 'text-green-400', medium: 'text-yellow-400', high: 'text-red-400',
         };
         severityEl.textContent = data.severity.toUpperCase();
         severityEl.className = `text-3xl font-bold ${severityColors[data.severity] || 'text-gray-400'}`;
@@ -178,11 +236,11 @@ class GuardianMonitor {
         const badgeColors = {
             low: 'bg-green-900 text-green-300',
             medium: 'bg-yellow-900 text-yellow-300',
-            high: 'bg-red-900 text-red-300'
+            high: 'bg-red-900 text-red-300',
         };
 
-        const confidencePercent = Math.round((data.confidence || 0) * 100);
-        const severityBadge = data.severity || 'unknown';
+        const pct = Math.round((data.confidence || 0) * 100);
+        const badge = data.severity || 'unknown';
 
         card.innerHTML = `
             <div class="flex justify-between items-start mb-3">
@@ -191,29 +249,22 @@ class GuardianMonitor {
                     <span class="mx-2 text-gray-600">|</span>
                     <span class="text-sm">${data.event_type || 'motion_detected'}</span>
                 </div>
-                <span class="px-2 py-0.5 rounded text-xs font-medium ${badgeColors[severityBadge]}">
-                    ${severityBadge.toUpperCase()}
-                </span>
+                <span class="px-2 py-0.5 rounded text-xs font-medium ${badgeColors[badge]}">${badge.toUpperCase()}</span>
             </div>
             <div class="mb-2">
                 <div class="flex justify-between text-xs text-gray-400 mb-1">
                     <span>Confianza</span>
-                    <span>${confidencePercent}%</span>
+                    <span>${pct}%</span>
                 </div>
                 <div class="w-full bg-gray-700 rounded-full h-2">
-                    <div class="confidence-bar bg-blue-500 h-2 rounded-full" style="width: ${confidencePercent}%"></div>
+                    <div class="confidence-bar bg-blue-500 h-2 rounded-full" style="width:${pct}%"></div>
                 </div>
             </div>
-            <div class="text-xs text-gray-500 font-mono">
-                ${time}
-            </div>
+            <div class="text-xs text-gray-500 font-mono">${time}</div>
         `;
 
         feed.insertBefore(card, feed.firstChild);
-
-        while (feed.children.length > 100) {
-            feed.removeChild(feed.lastChild);
-        }
+        while (feed.children.length > 100) feed.removeChild(feed.lastChild);
     }
 
     flashOverlay(severity) {
