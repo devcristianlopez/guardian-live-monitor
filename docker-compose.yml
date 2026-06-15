@@ -8,8 +8,8 @@ services:
       - .env
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # Puerto no expuesto al host para evitar conflicto con PostgreSQL local de lemoria
+    # Los servicios se conectan internamente por la red Docker
     healthcheck:
       test: pg_isready -U guardian -d guardian_monitor
       interval: 10s
