@@ -11,6 +11,19 @@ class GuardianMonitor {
     
     init() {
         this.connectWebSocket();
+        this.setupVideoStream();
+    }
+
+    setupVideoStream() {
+        const video = document.getElementById('live-video');
+        if (!video) return;
+        // Reload stream if it fails (e.g. during container startup)
+        video.addEventListener('error', () => {
+            console.log('Video stream error, retrying in 2s...');
+            setTimeout(() => {
+                video.src = '/stream?' + Date.now();
+            }, 2000);
+        });
     }
     
     connectWebSocket() {

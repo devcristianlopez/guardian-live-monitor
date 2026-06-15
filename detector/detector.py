@@ -6,8 +6,8 @@ differencing, and sends events to the backend API.
 """
 
 import asyncio
-import io
 import os
+import socketserver
 import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -35,6 +35,11 @@ STREAM_PORT = int(os.getenv("STREAM_PORT", "8080"))
 _latest_jpeg: bytes | None = None
 _jpeg_lock = threading.Lock()
 
+# Pre-encode a black placeholder frame so the stream never starts empty
+_placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+_, _buf = cv2.imencode(".jpg", _placeholder, [cv2.IMWRITE_JPEG_QUALITY, 50])
+_latest_jpeg = _buf.tobytes()
+
 
 class _MJPEGHandler(BaseHTTPRequestHandler):
     """Serve latest frame as MJPEG stream on GET /stream."""
@@ -44,8 +49,8 @@ class _MJPEGHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
             self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-            self.send_header("Connection", "close")
             self.send_header("Pragma", "no-cache")
+            self.send_header("Connection", "keep-alive")
             self.end_headers()
             while True:
                 with _jpeg_lock:
@@ -57,7 +62,7 @@ class _MJPEGHandler(BaseHTTPRequestHandler):
                         self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode())
                         self.wfile.write(jpeg)
                         self.wfile.write(b"\r\n")
-                    except (BrokenPipeError, ConnectionResetError):
+                    except (BrokenPipeError, ConnectionResetError, OSError):
                         break
                 time.sleep(0.05)
         else:
@@ -68,8 +73,14 @@ class _MJPEGHandler(BaseHTTPRequestHandler):
         pass  # suppress HTTP log spam
 
 
+class _ThreadingHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
+    """Threaded HTTP server for handling multiple stream clients."""
+    allow_reuse_address = True
+    daemon_threads = True
+
+
 def _start_mjpeg_server() -> None:
-    server = HTTPServer(("0.0.0.0", STREAM_PORT), _MJPEGHandler)
+    server = _ThreadingHTTPServer(("0.0.0.0", STREAM_PORT), _MJPEGHandler)
     print(f"[stream] MJPEG server listening on http://0.0.0.0:{STREAM_PORT}/stream")
     server.serve_forever()
 
