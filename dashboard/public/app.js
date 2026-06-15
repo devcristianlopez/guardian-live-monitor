@@ -81,11 +81,14 @@ class GuardianMonitor {
         sev.textContent = data.severity.toUpperCase();
         sev.className = `text-3xl font-bold ${colors[data.severity] || 'text-gray-400'}`;
 
-        // Timestamp: el backend ya lo envía con timezone (ISO-8601)
+        // Timestamp: defensivo contra formatos inesperados
         const ts = data.timestamp ? new Date(data.timestamp) : new Date();
-        const timeStr = ts.toLocaleTimeString();
-        const dateStr = ts.toLocaleDateString();
-        document.getElementById('last-event-time').textContent = `${dateStr} ${timeStr}`;
+        const isValid = !isNaN(ts.getTime());
+        const timeStr = isValid ? ts.toLocaleTimeString() : '—';
+        const dateStr = isValid ? ts.toLocaleDateString() : '';
+        document.getElementById('last-event-time').textContent = isValid
+            ? `${dateStr} ${timeStr}`
+            : `${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`;
 
         const empty = document.getElementById('empty-feed');
         if (empty) empty.remove();

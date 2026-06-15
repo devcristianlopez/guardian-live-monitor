@@ -45,10 +45,13 @@ async def create_event(
         event_dict = event_response.model_dump(mode="json")
 
         redis_conn = await get_redis()
-        try:
-            await publish_event(redis_conn, event_dict)
-        finally:
-            await redis_conn.aclose()
+        if redis_conn:
+            try:
+                await publish_event(redis_conn, event_dict)
+            except Exception as pub_err:
+                logger.warning("Failed to publish event to Redis: %s", pub_err)
+        else:
+            logger.warning("Redis not available, event only stored in PostgreSQL")
 
         return event_response
 
