@@ -6,6 +6,8 @@ class GuardianMonitor {
         this.maxReconnectDelay = 30000;
         this.wsUrl = `ws://${window.location.hostname}:8000/ws/events`;
 
+        this._pipelineTimeouts = [];
+
         this.init();
     }
 
@@ -145,30 +147,58 @@ class GuardianMonitor {
         const labels = ['📡 Detector', '📥 API', '🗄️ PostgreSQL', '⚡ Redis', '🔌 WebSocket'];
         const statusEl = document.getElementById('pipeline-status');
 
-        // Reset all to dim
-        steps.forEach(id => document.getElementById(id).classList.remove('opacity-100'));
-        steps.forEach(id => document.getElementById(id).classList.add('opacity-40'));
+        // Cancel any previous animation still running
+        this._pipelineTimeouts.forEach(clearTimeout);
+        this._pipelineTimeouts = [];
 
-        // Animate each step sequentially
-        steps.forEach((id, i) => {
-            setTimeout(() => {
-                const el = document.getElementById(id);
-                el.classList.remove('opacity-40');
-                el.classList.add('opacity-100');
-                el.style.transition = 'opacity 0.2s, filter 0.2s';
-                el.style.filter = 'drop-shadow(0 0 4px currentColor)';
-                statusEl.textContent = `→ ${labels[i]}`;
-
-                // Pulse effect on current step
-                el.style.transform = 'scale(1.3)';
-                setTimeout(() => { el.style.transform = 'scale(1)'; }, 200);
-            }, i * 250);
+        // Reset all steps: dim + no transform
+        steps.forEach(id => {
+            const el = document.getElementById(id);
+            el.classList.remove('opacity-100');
+            el.classList.add('opacity-40');
+            el.style.transform = '';
+            el.style.filter = '';
         });
 
-        // Final "completado"
-        setTimeout(() => {
+        // Animate each step sequentially (first at 50ms, then every 280ms)
+        steps.forEach((id, i) => {
+            const t = setTimeout(() => {
+                const el = document.getElementById(id);
+                // Brighten this step
+                el.classList.remove('opacity-40');
+                el.classList.add('opacity-100');
+                el.style.filter = 'brightness(1.3) drop-shadow(0 0 6px currentColor)';
+                statusEl.textContent = `→ ${labels[i]}`;
+
+                // Dim previous step (keep current bright)
+                if (i > 0) {
+                    const prev = document.getElementById(steps[i - 1]);
+                    prev.classList.remove('opacity-100');
+                    prev.classList.add('opacity-60');
+                    prev.style.filter = '';
+                }
+            }, i * 280 + 50);
+            this._pipelineTimeouts.push(t);
+        });
+
+        // Final: all bright, show "completado"
+        const finalDelay = steps.length * 280 + 350;
+        const t = setTimeout(() => {
+            // Keep all steps visible at full or 60%
+            steps.forEach((id, i) => {
+                const el = document.getElementById(id);
+                el.classList.remove('opacity-40');
+                if (i === steps.length - 1) {
+                    el.classList.add('opacity-100');
+                    el.style.filter = 'brightness(1.3) drop-shadow(0 0 6px currentColor)';
+                } else {
+                    el.classList.add('opacity-60');
+                    el.style.filter = '';
+                }
+            });
             statusEl.textContent = '✓ Pipeline completo — evento persistido y entregado';
-        }, steps.length * 250 + 300);
+        }, finalDelay);
+        this._pipelineTimeouts.push(t);
     }
 
     flashOverlay(severity) {
