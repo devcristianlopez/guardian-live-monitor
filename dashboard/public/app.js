@@ -79,10 +79,11 @@ class GuardianMonitor {
         sev.textContent = data.severity.toUpperCase();
         sev.className = `text-3xl font-bold ${colors[data.severity] || 'text-gray-400'}`;
 
-        const time = data.timestamp
-            ? new Date(data.timestamp + 'Z').toLocaleTimeString()
-            : new Date().toLocaleTimeString();
-        document.getElementById('last-event-time').textContent = time;
+        // Timestamp: el backend ya lo envía con timezone (ISO-8601)
+        const ts = data.timestamp ? new Date(data.timestamp) : new Date();
+        const timeStr = ts.toLocaleTimeString();
+        const dateStr = ts.toLocaleDateString();
+        document.getElementById('last-event-time').textContent = `${dateStr} ${timeStr}`;
 
         const empty = document.getElementById('empty-feed');
         if (empty) empty.remove();
@@ -98,8 +99,15 @@ class GuardianMonitor {
         };
         const pct = Math.round((data.confidence || 0) * 100);
 
+        const shortId = data.id ? data.id.slice(0, 8) : '—';
+        const flowIcons = `
+            <span title="PostgreSQL" class="text-green-400" style="filter:drop-shadow(0 0 2px #22c55e)">🗄️</span>
+            <span title="Redis" class="text-red-400" style="filter:drop-shadow(0 0 2px #ef4444)">⚡</span>
+            <span title="WebSocket" class="text-blue-400" style="filter:drop-shadow(0 0 2px #3b82f6)">🔌</span>
+        `;
+
         card.innerHTML = `
-            <div class="flex justify-between items-start mb-3">
+            <div class="flex justify-between items-start mb-2">
                 <div>
                     <span class="text-sm font-mono text-gray-400">${data.camera_id || 'N/A'}</span>
                     <span class="mx-2 text-gray-600">|</span>
@@ -111,10 +119,56 @@ class GuardianMonitor {
                 <div class="flex justify-between text-xs text-gray-400 mb-1"><span>Confianza</span><span>${pct}%</span></div>
                 <div class="w-full bg-gray-700 rounded-full h-2"><div class="confidence-bar bg-blue-500 h-2 rounded-full" style="width:${pct}%"></div></div>
             </div>
-            <div class="text-xs text-gray-500 font-mono">${time}</div>`;
+            <div class="flex items-center justify-between text-xs text-gray-500 font-mono">
+                <span>ID: ${shortId}…</span>
+                <span>${dateStr} ${timeStr}</span>
+            </div>
+            <div class="flex items-center gap-1 mt-1.5 text-xs text-gray-500">
+                <span class="text-gray-600">Flujo:</span>
+                ${flowIcons}
+                <span class="text-gray-600 ml-1">✓ Completado</span>
+            </div>`;
 
         feed.insertBefore(card, feed.firstChild);
         while (feed.children.length > 100) feed.removeChild(feed.lastChild);
+
+        // Animate pipeline flow
+        this.animatePipeline();
+    }
+
+    // ------------------------------------------------------------------
+    // Pipeline animation
+    // ------------------------------------------------------------------
+
+    animatePipeline() {
+        const steps = ['pipe-detector', 'pipe-api', 'pipe-db', 'pipe-redis', 'pipe-ws'];
+        const labels = ['📡 Detector', '📥 API', '🗄️ PostgreSQL', '⚡ Redis', '🔌 WebSocket'];
+        const statusEl = document.getElementById('pipeline-status');
+
+        // Reset all to dim
+        steps.forEach(id => document.getElementById(id).classList.remove('opacity-100'));
+        steps.forEach(id => document.getElementById(id).classList.add('opacity-40'));
+
+        // Animate each step sequentially
+        steps.forEach((id, i) => {
+            setTimeout(() => {
+                const el = document.getElementById(id);
+                el.classList.remove('opacity-40');
+                el.classList.add('opacity-100');
+                el.style.transition = 'opacity 0.2s, filter 0.2s';
+                el.style.filter = 'drop-shadow(0 0 4px currentColor)';
+                statusEl.textContent = `→ ${labels[i]}`;
+
+                // Pulse effect on current step
+                el.style.transform = 'scale(1.3)';
+                setTimeout(() => { el.style.transform = 'scale(1)'; }, 200);
+            }, i * 250);
+        });
+
+        // Final "completado"
+        setTimeout(() => {
+            statusEl.textContent = '✓ Pipeline completo — evento persistido y entregado';
+        }, steps.length * 250 + 300);
     }
 
     flashOverlay(severity) {

@@ -91,6 +91,36 @@
                     <p class="text-gray-400 text-sm">Último Evento</p>
                     <p id="last-event-time" class="text-sm font-mono text-gray-400">—</p>
                 </div>
+                <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                    <p class="text-gray-400 text-sm mb-2">Pipeline de Eventos</p>
+                    <div id="pipeline-flow" class="flex items-center justify-between text-xs">
+                        <div class="flex flex-col items-center gap-1">
+                            <span id="pipe-detector" class="text-lg">📡</span>
+                            <span class="text-gray-500">Detector</span>
+                        </div>
+                        <span class="text-gray-600 text-lg">→</span>
+                        <div class="flex flex-col items-center gap-1">
+                            <span id="pipe-api" class="text-lg opacity-40">📥</span>
+                            <span class="text-gray-500">API</span>
+                        </div>
+                        <span class="text-gray-600 text-lg">→</span>
+                        <div class="flex flex-col items-center gap-1">
+                            <span id="pipe-db" class="text-lg opacity-40">🗄️</span>
+                            <span class="text-gray-500">PostgreSQL</span>
+                        </div>
+                        <span class="text-gray-600 text-lg">→</span>
+                        <div class="flex flex-col items-center gap-1">
+                            <span id="pipe-redis" class="text-lg opacity-40">⚡</span>
+                            <span class="text-gray-500">Redis</span>
+                        </div>
+                        <span class="text-gray-600 text-lg">→</span>
+                        <div class="flex flex-col items-center gap-1">
+                            <span id="pipe-ws" class="text-lg opacity-40">🔌</span>
+                            <span class="text-gray-500">WebSocket</span>
+                        </div>
+                    </div>
+                    <p id="pipeline-status" class="text-xs text-gray-600 mt-2 text-center">Esperando primer evento...</p>
+                </div>
             </div>
         </div>
 
