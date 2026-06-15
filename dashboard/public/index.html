@@ -23,7 +23,10 @@
             position: relative;
             overflow: hidden;
             border-radius: 0.5rem;
+            background: #000;
+            min-height: 270px;
         }
+        #video-wrapper video,
         #video-wrapper img {
             width: 100%;
             height: auto;
@@ -51,8 +54,6 @@
         .confidence-bar {
             transition: width 0.5s ease-in-out;
         }
-        .status-online { color: #22c55e; }
-        .status-offline { color: #ef4444; }
         #event-feed {
             scrollbar-width: thin;
             scrollbar-color: #4b5563 #1f2937;
@@ -81,7 +82,7 @@
     </header>
 
     <main class="max-w-7xl mx-auto p-6">
-        <!-- Video Stream -->
+        <!-- Video + Analytics -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
             <div class="lg:col-span-2 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
                 <div class="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
@@ -89,28 +90,31 @@
                     <h2 class="font-semibold">Video en Vivo — <span id="cam-label" class="text-gray-400 font-mono text-sm">CAM-01</span></h2>
                 </div>
                 <div id="video-wrapper">
-                    <img src="/stream" alt="Live video stream" id="live-video">
+                    <video id="live-video" autoplay muted playsinline></video>
                     <div id="alert-overlay"></div>
+                </div>
+                <div id="cam-status" class="px-4 py-2 text-xs text-gray-500 border-t border-gray-700">
+                    Iniciando cámara...
                 </div>
             </div>
 
             <div class="space-y-4">
                 <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
-            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
-                <p class="text-gray-400 text-sm">Total Alertas</p>
-                <p id="total-alerts" class="text-3xl font-bold text-blue-400">0</p>
-            </div>
-            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
-                <p class="text-gray-400 text-sm">Última Severidad</p>
-                <p id="last-severity" class="text-3xl font-bold text-gray-400">—</p>
-            </div>
-            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
-                <p class="text-gray-400 text-sm">Último Evento</p>
-                <p id="last-event-time" class="text-sm font-mono text-gray-400">—</p>
-            </div>
+                    <p class="text-gray-400 text-sm">Total Alertas</p>
+                    <p id="total-alerts" class="text-3xl font-bold text-blue-400">0</p>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                    <p class="text-gray-400 text-sm">Última Severidad</p>
+                    <p id="last-severity" class="text-3xl font-bold text-gray-400">—</p>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                    <p class="text-gray-400 text-sm">Último Evento</p>
+                    <p id="last-event-time" class="text-sm font-mono text-gray-400">—</p>
+                </div>
             </div>
         </div>
 
+        <!-- Event Feed -->
         <div class="bg-gray-800 rounded-lg border border-gray-700">
             <div class="px-4 py-3 border-b border-gray-700">
                 <h2 class="font-semibold">Feed de Eventos en Vivo</h2>

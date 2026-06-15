@@ -5,34 +5,92 @@ class GuardianMonitor {
         this.reconnectAttempts = 0;
         this.maxReconnectDelay = 30000;
         this.wsUrl = `ws://${window.location.hostname}:8000/ws/events`;
-        
+        this.webcamStream = null;
+
         this.init();
     }
-    
+
+    // ------------------------------------------------------------------
+    // Init
+    // ------------------------------------------------------------------
+
     init() {
         this.connectWebSocket();
-        this.setupVideoStream();
+        this.startWebcam();
     }
 
-    setupVideoStream() {
+    // ------------------------------------------------------------------
+    // Webcam via getUserMedia (fallback to MJPEG stream)
+    // ------------------------------------------------------------------
+
+    async startWebcam() {
         const video = document.getElementById('live-video');
+        const status = document.getElementById('cam-status');
         if (!video) return;
-        // Reload stream if it fails (e.g. during container startup)
-        video.addEventListener('error', () => {
-            console.log('Video stream error, retrying in 2s...');
-            setTimeout(() => {
-                video.src = '/stream?' + Date.now();
-            }, 2000);
-        });
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    frameRate: { ideal: 20 },
+                },
+                audio: false,
+            });
+            this.webcamStream = stream;
+            video.srcObject = stream;
+            await video.play();
+            if (status) status.textContent = '✅ Webcam conectada';
+            console.log('Webcam started via getUserMedia');
+        } catch (err) {
+            console.warn('getUserMedia failed, falling back to MJPEG stream:', err.message);
+            if (status) status.textContent = '⚠️ Webcam no disponible, usando stream MJPEG';
+            this.fallbackToMjpeg(video);
+        }
     }
-    
+
+    fallbackToMjpeg(video) {
+        // Remove video srcObject and use img proxy instead
+        video.style.display = 'none';
+
+        // Create a fallback img element for MJPEG
+        const wrapper = document.getElementById('video-wrapper');
+        if (!wrapper) return;
+
+        const img = document.createElement('img');
+        img.id = 'mjpeg-fallback';
+        img.alt = 'MJPEG Stream';
+        img.style.width = '100%';
+        img.style.height = 'auto';
+        img.style.display = 'block';
+
+        const reloadStream = () => {
+            img.src = '/stream?' + Date.now();
+        };
+
+        img.addEventListener('error', () => {
+            console.log('MJPEG stream error, retrying...');
+            setTimeout(reloadStream, 2000);
+        });
+
+        // Insert before the overlay
+        const overlay = document.getElementById('alert-overlay');
+        wrapper.insertBefore(img, overlay);
+
+        reloadStream();
+    }
+
+    // ------------------------------------------------------------------
+    // WebSocket
+    // ------------------------------------------------------------------
+
     connectWebSocket() {
         if (this.ws) {
             this.ws.close();
         }
-        
+
         this.updateConnectionStatus('connecting');
-        
+
         try {
             this.ws = new WebSocket(this.wsUrl);
         } catch (e) {
@@ -40,13 +98,13 @@ class GuardianMonitor {
             this.scheduleReconnect();
             return;
         }
-        
+
         this.ws.onopen = () => {
             console.log('WebSocket connected');
             this.reconnectAttempts = 0;
             this.updateConnectionStatus('online');
         };
-        
+
         this.ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
@@ -55,19 +113,19 @@ class GuardianMonitor {
                 console.error('Error parsing event:', e);
             }
         };
-        
+
         this.ws.onclose = () => {
             console.log('WebSocket disconnected');
             this.updateConnectionStatus('offline');
             this.scheduleReconnect();
         };
-        
+
         this.ws.onerror = (error) => {
             console.error('WebSocket error:', error);
             this.ws.close();
         };
     }
-    
+
     scheduleReconnect() {
         const delay = Math.min(
             1000 * Math.pow(2, this.reconnectAttempts),
@@ -75,25 +133,27 @@ class GuardianMonitor {
         );
         console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1})`);
         this.reconnectAttempts++;
-        
+
         setTimeout(() => {
             this.connectWebSocket();
         }, delay);
     }
-    
+
+    // ------------------------------------------------------------------
+    // Event handling
+    // ------------------------------------------------------------------
+
     handleEvent(data) {
         this.totalAlerts++;
         document.getElementById('total-alerts').textContent = this.totalAlerts;
 
-        // Update camera label on first event
         const camLabel = document.getElementById('cam-label');
         if (camLabel && data.camera_id) {
             camLabel.textContent = data.camera_id;
         }
 
-        // Flash video overlay on alert
         this.flashOverlay(data.severity);
-        
+
         const severityEl = document.getElementById('last-severity');
         const severityColors = {
             low: 'text-green-400',
@@ -102,26 +162,28 @@ class GuardianMonitor {
         };
         severityEl.textContent = data.severity.toUpperCase();
         severityEl.className = `text-3xl font-bold ${severityColors[data.severity] || 'text-gray-400'}`;
-        
-        const time = data.timestamp ? new Date(data.timestamp + 'Z').toLocaleTimeString() : new Date().toLocaleTimeString();
+
+        const time = data.timestamp
+            ? new Date(data.timestamp + 'Z').toLocaleTimeString()
+            : new Date().toLocaleTimeString();
         document.getElementById('last-event-time').textContent = time;
-        
+
         const emptyFeed = document.getElementById('empty-feed');
         if (emptyFeed) emptyFeed.remove();
-        
+
         const feed = document.getElementById('event-feed');
         const card = document.createElement('div');
         card.className = `event-card bg-gray-900 rounded-lg p-4 border border-gray-700 severity-${data.severity}`;
-        
+
         const badgeColors = {
             low: 'bg-green-900 text-green-300',
             medium: 'bg-yellow-900 text-yellow-300',
             high: 'bg-red-900 text-red-300'
         };
-        
+
         const confidencePercent = Math.round((data.confidence || 0) * 100);
         const severityBadge = data.severity || 'unknown';
-        
+
         card.innerHTML = `
             <div class="flex justify-between items-start mb-3">
                 <div>
@@ -146,14 +208,14 @@ class GuardianMonitor {
                 ${time}
             </div>
         `;
-        
+
         feed.insertBefore(card, feed.firstChild);
-        
+
         while (feed.children.length > 100) {
             feed.removeChild(feed.lastChild);
         }
     }
-    
+
     flashOverlay(severity) {
         const overlay = document.getElementById('alert-overlay');
         if (!overlay) return;
@@ -165,7 +227,7 @@ class GuardianMonitor {
     updateConnectionStatus(status) {
         const indicator = document.getElementById('status-indicator');
         const statusText = document.getElementById('connection-status');
-        
+
         switch (status) {
             case 'online':
                 indicator.className = 'w-3 h-3 rounded-full bg-green-500 shadow-lg shadow-green-500/50';
