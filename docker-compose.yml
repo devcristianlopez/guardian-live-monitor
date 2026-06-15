@@ -1,0 +1,77 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: guardian-postgres
+    env_file:
+      - .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: pg_isready -U guardian -d guardian_monitor
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - guardian-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: guardian-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: redis-cli ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - guardian-net
+
+  backend:
+    build: ./backend
+    container_name: guardian-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - guardian-net
+
+  detector:
+    build: ./detector
+    container_name: guardian-detector
+    depends_on:
+      - backend
+    devices:
+      - /dev/video0:/dev/video0
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - guardian-net
+
+  dashboard:
+    build: ./dashboard
+    container_name: guardian-dashboard
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - guardian-net
+
+volumes:
+  pgdata:
+
+networks:
+  guardian-net:
+    driver: bridge

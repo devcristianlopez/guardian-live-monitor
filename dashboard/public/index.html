@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guardian Live Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .event-card {
+            animation: slideIn 0.4s ease-out;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .severity-low { border-left: 4px solid #22c55e; }
+        .severity-medium { border-left: 4px solid #eab308; }
+        .severity-high { border-left: 4px solid #ef4444; }
+        .confidence-bar {
+            transition: width 0.5s ease-in-out;
+        }
+        .status-online { color: #22c55e; }
+        .status-offline { color: #ef4444; }
+        #event-feed {
+            scrollbar-width: thin;
+            scrollbar-color: #4b5563 #1f2937;
+        }
+        #event-feed::-webkit-scrollbar {
+            width: 6px;
+        }
+        #event-feed::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        #event-feed::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    <header class="bg-gray-800 border-b border-gray-700 px-6 py-4">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-3 h-3 rounded-full" id="status-indicator"></div>
+                <h1 class="text-xl font-bold">Guardian Live Monitor</h1>
+            </div>
+            <span id="connection-status" class="text-sm font-medium">Conectando...</span>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <p class="text-gray-400 text-sm">Total Alertas</p>
+                <p id="total-alerts" class="text-3xl font-bold text-blue-400">0</p>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <p class="text-gray-400 text-sm">Última Severidad</p>
+                <p id="last-severity" class="text-3xl font-bold text-gray-400">—</p>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <p class="text-gray-400 text-sm">Último Evento</p>
+                <p id="last-event-time" class="text-sm font-mono text-gray-400">—</p>
+            </div>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg border border-gray-700">
+            <div class="px-4 py-3 border-b border-gray-700">
+                <h2 class="font-semibold">Feed de Eventos en Vivo</h2>
+            </div>
+            <div id="event-feed" class="p-4 space-y-3 max-h-[600px] overflow-y-auto">
+                <p id="empty-feed" class="text-gray-500 text-center py-8">Esperando eventos...</p>
+            </div>
+        </div>
+    </main>
+
+    <footer class="text-center text-gray-600 text-xs py-4">
+        Guardian Live Monitor v1.0 — MVP Demo
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
